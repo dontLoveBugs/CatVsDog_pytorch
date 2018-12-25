@@ -26,6 +26,7 @@ from utils import calculate_accuracy, AverageMeter
 
 label = ['Cat', 'Dog']
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 默认使用GPU 0
 
 def parse_command():
     import argparse
@@ -37,7 +38,7 @@ def parse_command():
                         help='number of data loading workers (default: 10)')
     parser.add_argument('--epochs', default=100, type=int, metavar='N',
                         help='number of total epochs to run (default: 15)')
-    parser.add_argument('-b', '--batch-size', default=128, type=int, help='mini-batch size (default: 8)')
+    parser.add_argument('-b', '--batch-size', default=16, type=int, help='mini-batch size (default: 8)')
     parser.add_argument('--lr', '--learning-rate', default=0.0001, type=float,
                         metavar='LR', help='initial learning rate (default 0.01)')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -46,13 +47,13 @@ def parse_command():
                         metavar='W', help='weight decay (default: 1e-4)')
     parser.add_argument(
         '--lr_patience',
-        default=10,
+        default=5,
         type=int,
         help='Patience of LR scheduler. See documentation of ReduceLROnPlateau.'
     )
     parser.add_argument(
         '--checkpoint',
-        default=1,
+        default=2,
         type=int,
         help='Trained model is saved at every this epochs.')
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -68,17 +69,22 @@ def parse_command():
 
 def create_dataloader(args):
     train_transform = transforms.Compose([
-        Resize(128),
-        transforms.RandomCrop((112, 112)),
+        # Resize(128),
+        transforms.Scale(256),
+        transforms.RandomCrop((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        # transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
     ])
 
     test_transform = transforms.Compose([
-        Resize(128),
-        transforms.CenterCrop((112, 112)),
+        # Resize(128),
+        transforms.Scale(256),
+        transforms.CenterCrop((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        # transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
     train_path = os.path.join(args.data_path, 'train')
@@ -131,9 +137,16 @@ def main():
     os.makedirs(log_path)
     logger = SummaryWriter(log_path)
 
+    best = 0.0
+    is_best = False
     for epoch in range(args.epochs):
         acc = train(epoch, model, train_loader, optimizer, criterion, logger)
-        test(epoch, model, test_loader, output_directory)
+
+        if acc > best:
+            best = acc
+            is_best = True
+
+        test(epoch, model, test_loader, output_directory, is_best)
         scheduler.step(acc)
 
         for i, param_group in enumerate(optimizer.param_groups):
@@ -142,9 +155,9 @@ def main():
 
             logger.add_scalar('Lr/lr_' + str(i), old_lr, epoch)
 
-        if i % args.checkpoint == 0:
+        if epoch % args.checkpoint == 0:
             save_file_path = os.path.join(output_directory,
-                                          'save_{}.pth'.format(i))
+                                          'save_{}.pth'.format(epoch))
             states = {
                 'epoch': i + 1,
                 'model': model.state_dict(),
@@ -202,7 +215,7 @@ def train(epoch, model, data_loader, optimizer, criterion, logger):
     return accuracies.avg
 
 
-def test(epoch, model, data_loader,  output_directory, write_to_file=True):
+def test(epoch, model, data_loader,  output_directory, is_best = False, write_to_file=True):
     print('Test at epoch {}'.format(epoch))
 
     fieldnames = ['id', 'label']
@@ -213,6 +226,13 @@ def test(epoch, model, data_loader,  output_directory, write_to_file=True):
         with open(test_csv, 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
+
+        if is_best:
+            filename_ = 'best.csv'
+            best_csv = os.path.join(output_directory, filename_)
+            with open(best_csv, 'w') as bestfile:
+                writer = csv.DictWriter(bestfile, fieldnames=fieldnames)
+                writer.writeheader()
 
     # losses = AverageMeter()
     # accuracies = AverageMeter()
@@ -254,6 +274,11 @@ def test(epoch, model, data_loader,  output_directory, write_to_file=True):
             with open(test_csv, 'a') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writerow({'id': idx[0], 'label': label[pred.item()]})
+
+            if is_best:
+                with open(best_csv, 'a') as bestfile:
+                    writer = csv.DictWriter(bestfile, fieldnames=fieldnames)
+                    writer.writerow({'id': idx[0], 'label': label[pred.item()]})
 
     print('Test finished at epoch {}'.format(epoch))
     # if logger is not None:
