@@ -80,6 +80,28 @@ class CatDogClassifier(nn.Module):
         return x
 
 
+def get_1x_lr_params(model):
+    """
+    This generator returns all the parameters for conv layers of the net.
+    """
+    b = [model.conv1, model.bn1, model.relu, model.maxpool, model.layer1, model.layer2, model.layer3, model.layer4, model.avgpool]
+    for i in range(len(b)):
+        for k in b[i].parameters():
+            if k.requires_grad:
+                yield k
+
+
+def get_10x_lr_params(model):
+    """
+    This generator returns all the parameters for fc layer of the net.
+    """
+    b = [model.classifier]
+    for j in range(len(b)):
+        for k in b[j].parameters():
+            if k.requires_grad:
+                yield k
+
+
 if __name__ == '__main__':
 
     img = torch.randn(10, 3, 112, 112).float().cuda()

@@ -37,7 +37,7 @@ def parse_command():
                         help='number of data loading workers (default: 10)')
     parser.add_argument('--epochs', default=100, type=int, metavar='N',
                         help='number of total epochs to run (default: 15)')
-    parser.add_argument('-b', '--batch-size', default=64, type=int, help='mini-batch size (default: 8)')
+    parser.add_argument('-b', '--batch-size', default=128, type=int, help='mini-batch size (default: 8)')
     parser.add_argument('--lr', '--learning-rate', default=0.0001, type=float,
                         metavar='LR', help='initial learning rate (default 0.01)')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
@@ -100,7 +100,8 @@ def main():
         print('Using GPUs:', 2)
 
     model = network.CatDogClassifier()
-    parameters = utils.get_fine_tuning_parameters(model, ft_begin_index=4)
+    train_params = [{'params': network.get_1x_lr_params(model), 'lr': args.lr},
+                    {'params': network.get_10x_lr_params(model), 'lr': args.lr * 10}]
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model).cuda()
@@ -111,7 +112,7 @@ def main():
     if torch.cuda.is_available():
         criterion = criterion.cuda()
 
-    optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.SGD(train_params, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     scheduler = lr_scheduler.ReduceLROnPlateau(
         optimizer, 'min', patience=args.lr_patience)
 
@@ -137,7 +138,7 @@ def main():
 
         for i, param_group in enumerate(optimizer.param_groups):
             old_lr = float(param_group['lr'])
-            print(i, old_lr)
+            # print(i, old_lr)
 
             logger.add_scalar('Lr/lr_' + str(i), old_lr, epoch)
 
@@ -196,7 +197,7 @@ def train(epoch, model, data_loader, optimizer, criterion, logger):
 
     if logger is not None:
         logger.add_scalar('Train/Loss_epoch', losses.avg, epoch)
-        logger.add_scalar('Train/Loss_epoch', accuracies.avg, epoch)
+        logger.add_scalar('Train/Acc_epoch', accuracies.avg, epoch)
 
     return accuracies.avg
 
@@ -247,13 +248,14 @@ def test(epoch, model, data_loader,  output_directory, write_to_file=True):
 
         _, pred = outputs.topk(1, 1, True)
         pred = pred.t()
-        print('pred: ', pred.item())
+        # print('pred: ', pred.item())
 
         if write_to_file:
             with open(test_csv, 'a') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writerow({'id': idx[0], 'label': label[pred.item()]})
 
+    print('Test finished at epoch {}'.format(epoch))
     # if logger is not None:
     #     logger.add_scalar('Test/loss', losses.avg, epoch)
     #     logger.add_scalar('Test/Acc', accuracies.avg, epoch)
