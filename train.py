@@ -18,14 +18,13 @@ from torch.optim import lr_scheduler
 
 import network
 
-from torchvision import datasets
 from torchvision.transforms import Resize, transforms
 
 import utils
 from dataloader import dataset
 from utils import calculate_accuracy, AverageMeter
 
-label = ['cat', 'dog']
+label = ['Cat', 'Dog']
 
 
 def parse_command():
@@ -51,6 +50,11 @@ def parse_command():
         type=int,
         help='Patience of LR scheduler. See documentation of ReduceLROnPlateau.'
     )
+    parser.add_argument(
+        '--checkpoint',
+        default=1,
+        type=int,
+        help='Trained model is saved at every this epochs.')
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
                         help='path to latest checkpoint (default: checkpoint-5.pth.tar, model_best.pth.tar)')
     parser.add_argument('-e', '--evaluate', dest='evaluate', type=str, default='',
@@ -79,10 +83,10 @@ def create_dataloader(args):
 
     train_path = os.path.join(args.data_path, 'train')
     test_path = os.path.join(args.data_path, 'test')
-    train_dataset = dataset.ImageFolder(root=train_path, transform=train_transform)
+    train_dataset = dataset.ImageFolder(root=train_path, ground_truth=True, transform=train_transform)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
-    test_dataset = dataset.ImageFolder(root=test_path, transform=test_transform)
+    test_dataset = dataset.ImageFolder(root=test_path, ground_truth=False, transform=test_transform)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)
 
     return train_loader, test_loader
@@ -137,6 +141,16 @@ def main():
 
             logger.add_scalar('Lr/lr_' + str(i), old_lr, epoch)
 
+        if i % args.checkpoint == 0:
+            save_file_path = os.path.join(output_directory,
+                                          'save_{}.pth'.format(i))
+            states = {
+                'epoch': i + 1,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+            }
+            torch.save(states, save_file_path)
+
 
 def train(epoch, model, data_loader, optimizer, criterion, logger):
     model.train()
@@ -180,6 +194,10 @@ def train(epoch, model, data_loader, optimizer, criterion, logger):
             logger.add_scalar('Train/Loss', losses.avg, current_step)
             logger.add_scalar('Train/Acc', accuracies.avg, current_step)
 
+    if logger is not None:
+        logger.add_scalar('Train/Loss_epoch', losses.avg, epoch)
+        logger.add_scalar('Train/Loss_epoch', accuracies.avg, epoch)
+
     return accuracies.avg
 
 
@@ -201,7 +219,7 @@ def test(epoch, model, data_loader,  output_directory, write_to_file=True):
     model.eval()
 
     for i, data in enumerate(data_loader):
-        inputs, labels = data
+        inputs, idx = data
 
         if torch.cuda.is_available():
             inputs = inputs.cuda()
@@ -234,7 +252,7 @@ def test(epoch, model, data_loader,  output_directory, write_to_file=True):
         if write_to_file:
             with open(test_csv, 'a') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writerow({'id': i, 'label': label[pred.item()]})
+                writer.writerow({'id': idx[0], 'label': label[pred.item()]})
 
     # if logger is not None:
     #     logger.add_scalar('Test/loss', losses.avg, epoch)

@@ -53,13 +53,15 @@ def make_dataset(dir, class_to_idx):
 
 def _make_dataset(dir):
     images = []
+    idxes = []
 
     files = os.listdir(dir)
 
     for e in sorted(files):
         images.append(e)
+        idxes.append(e.split('.')[0])
 
-    return images
+    return images, idxes
 
 
 class DatasetFolder(data.Dataset):
@@ -89,8 +91,8 @@ class DatasetFolder(data.Dataset):
         samples (list): List of (sample path, class_index) tuples
     """
 
-    def __init__(self, root, loader, extensions, is_Train=True, transform=None, target_transform=None):
-        self.train = is_Train
+    def __init__(self, root, loader, extensions, ground_truth = True, transform=None, target_transform=None):
+        self.train = ground_truth
 
         if self.train:
             classes, class_to_idx = find_classes(root)
@@ -106,7 +108,10 @@ class DatasetFolder(data.Dataset):
             self.classes = classes
             self.class_to_idx = class_to_idx
         else:
-            samples = _make_dataset(root)
+            samples, idxes = _make_dataset(root)
+            # print('sample:', samples)
+            # print('idx:', idxes)
+            self.idxes = idxes
 
         self.root = root
         self.loader = loader
@@ -137,12 +142,13 @@ class DatasetFolder(data.Dataset):
             return sample, target
         else:
             path = self.samples[index]
+            idx = self.idxes[index]
             path = os.path.join(self.root, path)
             sample = self.loader(path)
             if self.transform is not None:
                 sample = self.transform(sample)
 
-            return sample
+            return sample, idx
 
     def __len__(self):
         return len(self.samples)
@@ -183,9 +189,9 @@ class ImageFolder(DatasetFolder):
         imgs (list): List of (image path, class_index) tuples
     """
 
-    def __init__(self, root, transform=None, target_transform=None,
+    def __init__(self, root, ground_truth=True, transform=None, target_transform=None,
                  loader=pil_loader):
-        super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS,
+        super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS, ground_truth,
                                           transform=transform,
                                           target_transform=target_transform)
         self.imgs = self.samples
